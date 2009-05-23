@@ -50,4 +50,4 @@ const char default_iniKey[]="blowinikey", blow_ini[]="/blow.ini";
 char iniKey[100], iniPath[255], tempPath[255];
 char g_myPrivKey[300], g_myPubKey[300];
 
-BOOL unsetiniFlag=0, keyx_query_created=0;
+unsigned short unsetiniFlag=0, keyx_query_created=0;

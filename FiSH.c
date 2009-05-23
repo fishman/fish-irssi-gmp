@@ -6,10 +6,10 @@
 
 // load base64 blowfish key for contact
 // if theKey is NULL, only a test is made (= IsKeySetForContact)
-BOOL LoadKeyForContact(const char *contactPtr, char *theKey)
+unsigned short LoadKeyForContact(const char *contactPtr, char *theKey)
 {
 	char contactName[CONTACT_SIZE]="", tmpKey[KEYBUF_SIZE]="";
-	BOOL bRet=FALSE;
+	unsigned short bRet=FALSE;
 
 
 	FixIniSection(contactPtr, contactName);	// replace '[' and ']' with '~' in contact name
