@@ -1,6 +1,10 @@
 #include <string.h>
-#include "miracl.h"
+#include <gmp.h>
 
+#ifndef TRUE
+#define TRUE 1
+#define FALSE 0
+#endif
 
 // Input:  priv_key = buffer of 200 bytes
 //         pub_key  = buffer of 200 bytes
@@ -15,7 +19,7 @@ int DH1080_gen(char *priv_key, char *pub_key);
 int DH1080_comp(char *MyPrivKey, char *HisPubKey);
 
 
-BOOL DH1080_Init();
+unsigned short DH1080_Init();
 void DH1080_DeInit();
 
 #define DH1080_PRIME_BITS	1080

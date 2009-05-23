@@ -30,22 +30,16 @@ static char prime1080[135] = {
 // base10: 12745216229761186769575009943944198619149164746831579719941140425076456621824834322853258804883232842877311723249782818608677050956745409379781245497526069657222703636504651898833151008222772087491045206203033063108075098874712912417029101508315117935752962862335062591404043092163187352352197487303798807791605274487594646923
 
 
-miracl *mip;
-big b_prime1080, b_1;
+mpz_t mpz_prime;
+mpz_t mpz_b_1;
 
 
-BOOL DH1080_Init()
+unsigned short DH1080_Init()
 {
 	initb64();
-    mip=mirsys(256, 0);
-	if(mip==NULL) return FALSE;
 
-	b_prime1080=mirvar(0);
-	b_1=mirvar(0);
-
-	bytes_to_big(DH1080_PRIME_BYTES, prime1080, b_prime1080);
-
-	lgconv(1, b_1);
+	mpz_init_set_str(mpz_prime, prime1080, 16);
+	mpz_init_set_ui(mpz_b_1, 1);
 
 	return TRUE;
 }
@@ -53,25 +47,21 @@ BOOL DH1080_Init()
 
 void DH1080_DeInit()
 {
-	if(mip)
-	{
-		mirkill(b_1);
-		mirkill(b_prime1080);
-		mirexit();
-	}
+	mpz_clear(mpz_prime);
+	mpz_clear(mpz_b_1);
 }
 
 
 
 // verify the Diffie-Hellman public key as described in RFC 2631
-BOOL DH_verifyPubKey(big b_pubkey)
+unsigned short DH_verifyPubKey(mpz_t mpz_pubkey)
 {
-	BOOL bRet = FALSE;
+	unsigned short bRet = FALSE;
 
 	// Verify that pubkey lies within the interval [2,p-1].
 	// If it does not, the key is invalid.
-	if(	(compare(b_pubkey, b_prime1080) == -1) &&
-		(compare(b_pubkey, b_1) == 1)) bRet = TRUE;
+	if(	(mpz_cmp(mpz_pubkey, mpz_prime) == -1) &&
+		(mpz_cmp(mpz_pubkey, mpz_b_1) == 1)) bRet = TRUE;
 
 	return bRet;
 }
@@ -84,64 +74,40 @@ BOOL DH_verifyPubKey(big b_pubkey)
 //         pub_key  = Your public key
 int DH1080_gen(char *priv_key, char *pub_key)
 {
-	unsigned char raw_buf[160], iniHash[33];
+	unsigned char raw_buf[160];
 	unsigned long seed;
 	int len, iRet;
 
-	big b_privkey, b_pubkey;
-	csprng myRNG;
-
-	FILE *hRnd;
+	mpz_t mpz_privkey, mpz_pubkey, mpz_base;
+	gmp_randstate_t randstate;
 
 	priv_key[0]='0';
 	priv_key[1]='\0';
 	pub_key[0]='0';
 	pub_key[1]='\0';
-	hRnd = fopen("/dev/urandom", "r");	// don't use /dev/random, it's a blocking device
-	if(!hRnd) return 0;
 
-	b_privkey=mirvar(0);
-	b_pubkey=mirvar(0);
+	mpz_init(mpz_privkey);
+	mpz_init(mpz_pubkey);
+	mpz_init_set_ui(mpz_base, 2);
 
 	// #*#*#*#*#* RNG START #*#*#*#*#*
 	time((time_t *)&seed);
 
-	seed ^= (long)hRnd << 16;
-	if(fread(raw_buf, 1, sizeof(raw_buf), hRnd) < 32)
-	{
-		ZeroMemory(raw_buf, sizeof(raw_buf));
-		fclose(hRnd);
-		mirkill(b_privkey);
-		mirkill(b_pubkey);
-
-		return 0;
-	}
-	fclose(hRnd);
-
-	sha_file(iniPath, iniHash);
-	memXOR(raw_buf+128, iniHash, 32);
-	sha_file((unsigned char *)get_irssi_config(), iniHash);
-	memXOR(raw_buf+128, iniHash, 32);
-	ZeroMemory(iniHash, sizeof(iniHash));
-	// first 128 byte in raw_buf: output from /dev/urandom
-	// last 32 byte in raw_buf: SHA-256 digest from blow.ini and irssi.conf
-
-	seed *= (unsigned long)mip;
-	strong_init(&myRNG, sizeof(raw_buf), raw_buf, (unsigned int)seed);
-	strong_rng(&myRNG);
-	strong_bigdig(&myRNG, 1080, 2, b_privkey);
-	strong_kill(&myRNG);
+	gmp_randinit_default(randstate);
+	gmp_randseed_ui(randstate, seed);
+	mpz_urandomb(mpz_privkey, randstate, 1080);
+	gmp_randclear(randstate);
 	seed=0;
 	// #*#*#*#*#* RNG END #*#*#*#*#*
 
-	powltr(2, b_privkey, b_prime1080, b_pubkey);
+	mpz_powm(mpz_pubkey, mpz_base, mpz_privkey, mpz_prime);
 
-	if(DH_verifyPubKey(b_pubkey))
+	if(DH_verifyPubKey(mpz_pubkey))
 	{
-		len=big_to_bytes(sizeof(raw_buf), b_privkey, raw_buf, FALSE);
-		htob64(raw_buf, priv_key, len);
+		mpz_export((void*)raw_buf, &len, 1, 1, 1, 0, mpz_privkey);
+		mpz_clear(mpz_privkey);
 
-		len=big_to_bytes(sizeof(raw_buf), b_pubkey, raw_buf, FALSE);
+		mpz_export((void*)raw_buf, &len, 1, 1, 1, 0, mpz_pubkey);
 		htob64(raw_buf, pub_key, len);
 
 		iRet=1;
@@ -150,8 +116,8 @@ int DH1080_gen(char *priv_key, char *pub_key)
 
 	ZeroMemory(raw_buf, sizeof(raw_buf));
 
-	mirkill(b_privkey);
-	mirkill(b_pubkey);
+	mpz_clear(mpz_pubkey);
+	mpz_clear(mpz_prime);
 
 	return iRet;
 }
@@ -166,7 +132,7 @@ int DH1080_comp(char *MyPrivKey, char *HisPubKey)
 {
 	int i=0, len, iRet;
 	unsigned char SHA256digest[35], base64_tmp[160];
-	big b_myPrivkey, b_HisPubkey, b_theKey;
+	mpz_t mpz_myPrivkey, mpz_hisPubkey, mpz_prime, mpz_theKey;
 
 	// Verify base64 strings
 	if((strspn(MyPrivKey, B64ABC) != strlen(MyPrivKey)) || (strspn(HisPubKey, B64ABC) != strlen(HisPubKey)))
@@ -176,25 +142,25 @@ int DH1080_comp(char *MyPrivKey, char *HisPubKey)
 		return 0;
 	}
 
-	b_HisPubkey=mirvar(0);
-	b_theKey=mirvar(0);
-
+	mpz_init(mpz_hisPubkey);
 
 	len=b64toh(HisPubKey, base64_tmp);
-	bytes_to_big(len, base64_tmp, b_HisPubkey);
+	mpz_import(mpz_hisPubkey, len, 1, 1, 1, 0, base64_tmp);
 
-	if(DH_verifyPubKey(b_HisPubkey))
+	if(DH_verifyPubKey(mpz_hisPubkey))
 	{
-		b_myPrivkey=mirvar(0);
+		mpz_init(mpz_theKey);
+		mpz_init(mpz_myPrivkey);
 
 		len=b64toh(MyPrivKey, base64_tmp);
-		bytes_to_big(len, base64_tmp, b_myPrivkey);
+		mpz_import(mpz_myPrivkey, len, 1, 1, 1, 0, base64_tmp);
 		memset(MyPrivKey, 0x20, strlen(MyPrivKey));
 
-		powmod(b_HisPubkey, b_myPrivkey, b_prime1080, b_theKey);
-		mirkill(b_myPrivkey);
+		mpz_powm(mpz_theKey, mpz_hisPubkey, mpz_myPrivkey, mpz_prime);
+		mpz_clear(mpz_myPrivkey);
 
-		len=big_to_bytes(sizeof(base64_tmp), b_theKey, base64_tmp, FALSE);
+		mpz_export((void*)base64_tmp, &len, 1, 1, 1, 0, mpz_theKey);
+		mpz_clear(mpz_theKey);
 		SHA256_memory(base64_tmp, len, SHA256digest);
 		htob64(SHA256digest, HisPubKey, 32);
 
@@ -206,8 +172,7 @@ int DH1080_comp(char *MyPrivKey, char *HisPubKey)
 	ZeroMemory(base64_tmp, sizeof(base64_tmp));
 	ZeroMemory(SHA256digest, sizeof(SHA256digest));
 
-	mirkill(b_theKey);
-	mirkill(b_HisPubkey);
+	mpz_clear(mpz_hisPubkey);
 
 	return iRet;
 }
