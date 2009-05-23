@@ -1,0 +1,87 @@
+# bash makefile for MIRACL (http://www.shamus.ie/)
+# for use on sparc32 systems (tested with MIRACL v5.3.2)
+#
+# Usual steps to compile MIRACL:
+#
+# mkdir MIRACL;cd MIRACL
+# wget ftp://ftp.computing.dcu.ie/pub/crypto/miracl.zip
+# or: curl -O ftp://ftp.computing.dcu.ie/pub/crypto/miracl.zip
+# unzip -j -aa -L miracl.zip
+# cp /path/to/mirdef_sparc32.h mirdef.h
+# cp /path/to/mir_sparc32 sparc32
+# bash sparc32
+#
+# test with: ./pk-demo
+
+
+if [ ! -f "../mirdef_sparc32.h" ]; then
+	if [ ! -f "mirdef_sparc32.h" ]; then
+		echo "mirdef_sparc32.h not found! Make sure you are using the correct mirdef.h"
+		echo
+		echo "Press ENTER to continue or CTRL+C to abort..."; read junk
+	else
+		cp mirdef_sparc32.h mirdef.h
+		echo; echo "Okay: Using mirdef_sparc32.h ..."; echo
+	fi
+else
+	cp ../mirdef_sparc32.h mirdef.h
+	echo; echo "Okay: Using ../mirdef_sparc32.h ..."; echo
+fi
+
+
+# choose your gcc compiler
+CC=gcc
+
+# Maybe you'll need '-m32' for sparc32
+CCFLAGS="-fPIC -m32"
+
+
+rm -f miracl.a mr*.o pk-demo bmark
+
+$CC -I. -c -O2 $CCFLAGS mrcore.c
+$CC -I. -c -O2 $CCFLAGS mrarth0.c
+$CC -I. -c -O2 $CCFLAGS mrarth1.c
+$CC -I. -c -O2 $CCFLAGS mrarth2.c
+$CC -I. -c -O2 $CCFLAGS mralloc.c
+$CC -I. -c -O2 $CCFLAGS mrsmall.c
+$CC -I. -c -O2 $CCFLAGS mrio1.c
+$CC -I. -c -O2 $CCFLAGS mrio2.c
+$CC -I. -c -O2 $CCFLAGS mrgcd.c
+$CC -I. -c -O2 $CCFLAGS mrjack.c
+$CC -I. -c -O2 $CCFLAGS mrxgcd.c
+$CC -I. -c -O2 $CCFLAGS mrarth3.c
+$CC -I. -c -O2 $CCFLAGS mrbits.c
+$CC -I. -c -O2 $CCFLAGS mrrand.c
+$CC -I. -c -O2 $CCFLAGS mrprime.c
+$CC -I. -c -O2 $CCFLAGS mrcrt.c
+$CC -I. -c -O2 $CCFLAGS mrscrt.c
+$CC -I. -c -O2 $CCFLAGS mrmonty.c
+$CC -I. -c -O2 $CCFLAGS mrpower.c
+$CC -I. -c -O2 $CCFLAGS mrsroot.c
+$CC -I. -c -O2 $CCFLAGS mrcurve.c
+$CC -I. -c -O2 $CCFLAGS mrfast.c
+$CC -I. -c -O2 $CCFLAGS mrshs.c
+$CC -I. -c -O2 $CCFLAGS mrshs256.c
+$CC -I. -c -O2 $CCFLAGS -w mrshs512.c
+$CC -I. -c -O2 $CCFLAGS mraes.c
+$CC -I. -c -O2 $CCFLAGS mrlucas.c
+$CC -I. -c -O2 $CCFLAGS mrstrong.c
+$CC -I. -c -O2 $CCFLAGS mrbrick.c
+$CC -I. -c -O2 $CCFLAGS mrebrick.c
+$CC -I. -c -O2 $CCFLAGS mrec2m.c
+$CC -I. -c -O2 $CCFLAGS mrgf2m.c
+
+ar rc miracl.a mrcore.o mrarth0.o mrarth1.o mrarth2.o mralloc.o mrsmall.o
+ar r miracl.a mrio1.o mrio2.o mrjack.o mrgcd.o mrxgcd.o mrarth3.o mrbits.o
+ar r miracl.a mrrand.o mrprime.o mrcrt.o mrscrt.o mrmonty.o mrcurve.o mrsroot.o
+ar r miracl.a mrpower.o mrfast.o mrshs.o mrshs256.o mraes.o mrlucas.o mrstrong.o       
+ar r miracl.a mrbrick.o mrebrick.o mrec2m.o mrgf2m.o mrshs512.o
+
+$CC -I. -O2 $CCFLAGS pk-demo.c miracl.a -o pk-demo
+$CC -I. -O2 $CCFLAGS bmark.c miracl.a -o bmark
+$CC -I. -O2 $CCFLAGS fact.c miracl.a -o fact
+rm mr*.o
+
+echo;echo
+echo -e "\033[1mtest with: ./pk-demo or ./bmark\033[0m"
+echo
