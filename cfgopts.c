@@ -4,7 +4,7 @@
 static unsigned char line[1000], line_bak[1000];
 
 
-int GetPrivateProfileString(char *section, char *key, char *default_value, char *buffer, int buflen, char *filepath)
+int GetPrivateProfileString(const char *section, const char *key, const char *default_value, char *buffer, int buflen, const char *filepath)
 {
 	int len=0;
 	FILE *file;
@@ -61,7 +61,7 @@ file_error:
 
 
 
-int WritePrivateProfileString(char *section, char *key, char *value, char *filepath)
+int WritePrivateProfileString(const char *section, const char *key, const char *value, const char *filepath)
 {
 	int section_not_found=1;
 	FILE *infile, *outfile;

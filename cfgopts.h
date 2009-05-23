@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
-int WritePrivateProfileString(char *section, char *key, char *value, char *filepath);
-int GetPrivateProfileString(char *section, char *key, char *default_value, char *buffer, int buflen, char *filepath);
+int WritePrivateProfileString(const char *section, const char *key, const char *value, const char *filepath);
+int GetPrivateProfileString(const char *section, const char *key, const char *default_value, char *buffer, int buflen, const char *filepath);
 
-extern unsigned char tempPath[];
+extern char tempPath[];

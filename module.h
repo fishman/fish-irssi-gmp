@@ -1,27 +1,23 @@
-#include "common.h"
-#include "servers.h"
-#include "settings.h"
-#include "printtext.h"
-#include "levels.h"
-#include "signals.h"
-#include "commands.h"
-#include "queries.h"
-#include "channels.h"
-#include "window-items.h"
-
+#define HAVE_CONFIG_H
 
 #define MODULE_NAME "fish"
 
-typedef struct {
-	void (*orig_send_message)(SERVER_REC *server, const char *target,
-				  const char *msg, int target_type);
-} MODULE_SERVER_REC;
+#include <common.h>
+#include <core/servers.h>
+#include <core/settings.h>
+#include <core/levels.h>
+#include <core/signals.h>
+#include <core/commands.h>
+#include <core/queries.h>
+#include <core/channels.h>
+#include <core/recode.h>
+#include <fe-common/core/printtext.h>
+#include <fe-common/core/window-items.h>
+#include <irc/core/irc.h>
+#include <irc/core/irc-commands.h>
+#include <irc/core/irc-servers.h>
 
 
 void irssi_redraw(void);
-
-
-/* Send command to IRC server */
-void irc_send_cmdv(SERVER_REC *server, const char *cmd, ...) G_GNUC_PRINTF (2, 3);
 
 QUERY_REC *irc_query_create(const char *server_tag, const char *nick, int automatic);

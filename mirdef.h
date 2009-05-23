@@ -5,7 +5,7 @@
  *   muldvm, muldvd and muldvd2 will be necessary. See mrmuldv.any 
  *
  *   Suitable for Unix/Linux and for DJGPP GNU C Compiler
- *   Copyright (c) 1988-2001 Shamus Software Ltd.
+ *   Copyright (c) 1988-2006 Shamus Software Ltd.
  */
 
 #define MIRACL 32

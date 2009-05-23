@@ -1,80 +1,83 @@
-// FiSH encryption module for irssi, v0.99
+// FiSH encryption module for irssi, v1.00
 
 #include "FiSH.h"
 
 
 
-// encrypt a message and store in bf_dest (using key for target)
-static int FiSH_encrypt(char *msg_ptr, const char *target, char *bf_dest)
+// load base64 blowfish key for contact
+// if theKey is NULL, only a test is made (= IsKeySetForContact)
+BOOL LoadKeyForContact(const char *contactPtr, char *theKey)
 {
-	unsigned char contactName[100]="", theKey[150]="", ini_outgoing[10]="";
+	char contactName[CONTACT_SIZE]="", tmpKey[KEYBUF_SIZE]="";
+	BOOL bRet=FALSE;
 
 
-	if(msg_ptr==NULL || *msg_ptr=='\0' || bf_dest==NULL || target==NULL || *target=='\0') return 0;
+	FixIniSection(contactPtr, contactName);	// replace '[' and ']' with '~' in contact name
 
-	GetPrivateProfileString("FiSH", "process_outgoing", "1", ini_outgoing, sizeof(ini_outgoing), iniPath);
-	if(*ini_outgoing=='0' || *ini_outgoing=='n' || *ini_outgoing=='N') return 0;
+	GetPrivateProfileString(contactName, "key", "", tmpKey, KEYBUF_SIZE, iniPath);
+	if(strlen(tmpKey) < 16) return FALSE;		// don't process, encrypted key not found in ini
 
-	if(strlen(target) >= sizeof(contactName)) return 0;	// buffer too small
-	strcpy(contactName, target);
-	FixContactName(contactName);	// replace '[' and ']' with '~' in contact name
-
-	GetPrivateProfileString(contactName, "key", "", theKey, sizeof(theKey), iniPath);
-	if(strlen(theKey) < 4) return 0;		// don't process, key not found in ini
-
-	if(strncmp(theKey, "+OK ", 4)==0)
-	{	// key is encrypted, lets decrypt
-		decrypt_string((char *)iniKey, theKey+4, theKey, strlen(theKey+4));
-		if(*theKey=='\0')
-		{	// don't process, decrypted key is bad
-			ZeroMemory(theKey, sizeof(theKey));
-			return 0;
+	if(strncmp(tmpKey, "+OK ", 4)==0)
+	{
+		// encrypted key found
+		if(theKey)
+		{
+			// if it's not just a test, lets decrypt the key
+			decrypt_string((char *)iniKey, tmpKey+4, theKey, strlen(tmpKey+4));
 		}
+
+		bRet=TRUE;
 	}
 
-	encrypt_string(theKey, msg_ptr, bf_dest, strlen(msg_ptr));
-	ZeroMemory(theKey, sizeof(theKey));
+	ZeroMemory(tmpKey, KEYBUF_SIZE);
+	return bRet;
+}
 
+
+
+// encrypt a message and store in bf_dest (using key for target)
+int FiSH_encrypt(const SERVER_REC *server, const char *msg_ptr, const char *target, char *bf_dest)
+{
+	char theKey[KEYBUF_SIZE]="";
+
+
+	if(IsNULLorEmpty(msg_ptr) || bf_dest==NULL || IsNULLorEmpty(target)) return 0;
+
+	if(GetBlowIniSwitch("FiSH", "process_outgoing", "1") == 0) return 0;
+
+	if(LoadKeyForContact(target, theKey)==FALSE) return 0;
+
+	strcpy(bf_dest, "+OK ");
+
+	encrypt_string(theKey, msg_ptr, bf_dest+4, strlen(msg_ptr));
+
+	ZeroMemory(theKey, KEYBUF_SIZE);
 	return 1;
 }
 
 
 
 // decrypt a base64 cipher text (using key for target)
-static int FiSH_decrypt(char *msg_ptr, char *msg_bak, const char *target)
+int FiSH_decrypt(const SERVER_REC *server, char *msg_ptr, char *msg_bak, const char *target)
 {
-	unsigned char contactName[100], theKey[150]="", bf_dest[1000]="";
-	unsigned char ini_incoming[10]="", myMark[20]="", mark_pos[20]="";
-	unsigned int msg_len, i, mark_broken_block=0;
+	char contactName[CONTACT_SIZE]="", theKey[KEYBUF_SIZE]="", bf_dest[1000]="";
+	char myMark[20]="", markPos[20]="", *recoded;
+	int msg_len, i, mark_broken_block=0, action_found=0;
 
 
-	if(msg_ptr==NULL || *msg_ptr=='\0' || msg_bak==NULL || target==NULL || *target=='\0') return 0;
+	if(IsNULLorEmpty(msg_ptr) || msg_bak==NULL || IsNULLorEmpty(target)) return 0;
 
-	GetPrivateProfileString("FiSH", "process_incoming", "1", ini_incoming, sizeof(ini_incoming), iniPath);
-	if(*ini_incoming=='0' || *ini_incoming=='n' || *ini_incoming=='N') return 0;
+	if(GetBlowIniSwitch("FiSH", "process_incoming", "1") == 0) return 0;
 
 	if(strncmp(msg_ptr, "+OK ", 4)==0) msg_ptr += 4;
 	else if(strncmp(msg_ptr, "mcps ", 5)==0) msg_ptr += 5;
 	else return 0;		// don't process, blowcrypt-prefix not found
 
-	strcpy(contactName, target);
-	FixContactName(contactName);	// replace '[' and ']' with '~' in contact name
-
-	GetPrivateProfileString(contactName, "key", "", theKey, sizeof(theKey), iniPath);
-	if(*theKey=='\0' || strlen(theKey)<4) return 0;	// don't process, key not found in ini
-	if(strncmp(theKey, "+OK ", 4)==0)
-	{	// key is encrypted, lets decrypt
-		decrypt_string((char *)iniKey, theKey+4, theKey, strlen(theKey+4));
-		if(*theKey=='\0')
-		{	// don't process, decrypted key is bad
-			ZeroMemory(theKey, sizeof(theKey));
-			return 0;
-		}
-	}
-
 	// Verify base64 string
 	msg_len=strlen(msg_ptr);
 	if((strspn(msg_ptr, B64) != msg_len) || (msg_len < 12)) return 0;
+
+	if(LoadKeyForContact(target, theKey)==FALSE) return 0;
 
 	// usually a received message does not exceed 512 chars, but we want to prevent evil buffer overflow
 	if(msg_len >= (int)(sizeof(bf_dest)*1.5)) msg_ptr[(int)(sizeof(bf_dest)*1.5)-20]='\0';
@@ -86,30 +89,52 @@ static int FiSH_decrypt(char *msg_ptr, char *msg_bak, const char *target)
 		msg_len=(msg_len/12)*12;
 		msg_ptr[msg_len]='\0';
 		GetPrivateProfileString("FiSH", "mark_broken_block", " \002&\002", myMark, sizeof(myMark), iniPath);
-		if(*myMark=='\0' || *myMark=='0' || *myMark=='n' || *myMark=='N') mark_broken_block=0;
+		if(*myMark=='\0' || isNoChar(*myMark)) mark_broken_block=0;
 		else mark_broken_block=1;
 	}
 
 	decrypt_string(theKey, msg_ptr, bf_dest, msg_len);
-	ZeroMemory(theKey, sizeof(theKey));
+	ZeroMemory(theKey, KEYBUF_SIZE);
+
+	if(*bf_dest=='\0') return 0;	// don't process, decrypted msg is bad
+
+#ifdef FiSH_USE_IRSSI_RECODE
+	// recode message again, last time it was the encrypted message...
+	if(settings_get_bool("recode") && server!=NULL)
+	{
+		recoded = recode_in(server, bf_dest, target);
+		if(recoded)
+		{
+			strncpy(bf_dest, recoded, sizeof(bf_dest));
+			ZeroMemory(recoded, strlen(recoded));
+			g_free(recoded);
+		}
+	}
+#endif
 
 	i=0;
 	while(bf_dest[i] != 0x0A && bf_dest[i] != 0x0D && bf_dest[i] != '\0') i++;
 	bf_dest[i]='\0';	// in case of wrong key, decrypted message might have control characters -> cut message
-	if(*bf_dest=='\0') return 0;	// don't process, decrypted msg is bad
+
+	if(strncmp(bf_dest, "\001ACTION ", 8)==0)
+	{
+		// ACTION message found
+		if(bf_dest[i-1] == '\001') bf_dest[i-1] = '\0';	// remove 0x01 control character
+		action_found = 1;
+	}
 
 	// append broken-block-mark?
 	if(mark_broken_block) strcat(bf_dest, myMark);
 
 	// append crypt-mark?
-	GetPrivateProfileString(contactName, "mark_encrypted", "1", myMark, sizeof(myMark), iniPath);
-	if(*myMark!='0' && *myMark!='n' && *myMark!='N')
+	FixIniSection(target, contactName);	// replace '[' and ']' with '~' in contact name
+	if(GetBlowIniSwitch(contactName, "mark_encrypted", "1") != 0)
 	{
 		GetPrivateProfileString("FiSH", "mark_encrypted", "", myMark, sizeof(myMark), iniPath);	// global setting
 		if(*myMark != '\0')
 		{
-			GetPrivateProfileString("FiSH", "mark_position", "0", mark_pos, sizeof(mark_pos), iniPath);
-			if(*mark_pos=='0') strcat(bf_dest, myMark);		//append mark at the end
+			GetPrivateProfileString("FiSH", "mark_position", "0", markPos, sizeof(markPos), iniPath);
+			if(*markPos=='0' || action_found) strcat(bf_dest, myMark);		// append mark at the end (default for ACTION messages)
 			else
 			{	// prefix mark
 				i=strlen(myMark);
@@ -127,106 +152,156 @@ static int FiSH_decrypt(char *msg_ptr, char *msg_bak, const char *target)
 
 
 
-static void decrypt_incoming(SERVER_REC *server, char *msg, const char *nick, const char *addr, const char *target)
+void decrypt_msg(SERVER_REC *server, char *msg, const char *nick, const char *address, const char *target)
 {
-	unsigned char contactName[100]="", *msg_bak;
+	const char *contactPtr, *msg_bak=msg;
+	char contactName[CONTACT_SIZE]="";
 
 
 	if(msg==NULL || target==NULL || nick==NULL) return;
-	else if(strncmp(msg, "+OK ", 4)!=0 && strncmp(msg, "mcps ", 5)!=0 && strcmp(nick, "-psyBNC")!=0) return;	// don't process, blowcrypt-prefix not found
 
-	msg_bak=(unsigned char *)msg;	// this is needed, because of psyBNC
+#ifdef FiSH_DECRYPT_ZNC_LOGS
+	if(IsZNCtimestamp(msg)) msg += 11;
+#endif
 
 	//channel?
-	if(*target=='#' || *target=='&') strcpy(contactName, target);
+	if(ischannel(*target)) contactPtr=target;
 	else if(strcmp(nick, "-psyBNC")==0)
-	{
+	{	// psyBNC log message found		// <-psyBNC> Nw~Thu Mar 29 15:02:45 :(yourmom!ident@get.se) +OK e3454451hbadA0
+
 		msg=strstr(msg, " :(")+3;	// points to nick!ident@host in psybnc log
 		if(msg==(char *)3) return;
 		ExtractRnick(contactName, msg);
 		msg=strchr(msg, ' ')+1;
 		if(msg==(char *)1) return;
-		if((strncmp(msg, "+OK ", 4)!=0) && (strncmp(msg, "mcps ", 5)!=0)) return;
+		contactPtr = contactName;
 	}
-	else strcpy(contactName, nick);
+	else if(strcmp(nick, "-sBNC")==0)
+	{	// sBNC log message found (PRIVMSG)		// <-sBNC> Sun Sep  1 13:37:00 2007 someone (some@one.us): +OK Mp1p8.qYxFN1
 
-	if(FiSH_decrypt(msg, msg, contactName))
+		if((msg=strstr(msg, " ("))==NULL) return;
+		else msg--;		// points to the last char of the nick
+
+		while(*msg!='\0' && *msg!=' ' && msg > msg_bak) msg--;
+
+		if(*msg==' ') msg++;	// now points to the first char of the nick
+		else return;
+
+		ExtractRnick(contactName, msg);
+
+		if((msg=strstr(msg, "): "))==NULL) return;	// find metadata end
+		msg += 3;	// now points to encrypted message
+
+		contactPtr = contactName;
+	}
+	else contactPtr=nick;
+
+	if(FiSH_decrypt(server, msg, msg, contactPtr))
 	{
-		signal_stop();
-		signal_emit(signal_get_emitted(), 5, server, msg_bak, nick, addr, target);
+		if(strncmp(msg_bak, "\001ACTION ", 8)==0)
+		{
+			// ACTION message found
+			signal_stop();
+			signal_emit("message irc action", 5, server, msg_bak+8, nick, address, target);
+		}
 	}
 }
 
 
 
-static void encrypt_outgoing(SERVER_REC *server, char *msg, char *target, char *orig_target)
+void encrypt_msg(SERVER_REC *server, char *target, char *msg, char *orig_target)
 {
-	unsigned char bf_dest[800]="";
-	unsigned char contactName[100]="", plain_prefix[20]="";
-	unsigned char myMark[20]="", mark_pos[20]="";
-	unsigned int i;
+	char bf_dest[800]="", *plainMsg;
+
+
+	if(IsNULLorEmpty(msg) || IsNULLorEmpty(target)) return;
+	if(LoadKeyForContact(target, NULL)==FALSE) return;
+
+
+	plainMsg = IsPlainPrefix(msg);
+	if(plainMsg)
+	{
+		signal_continue(4, server, target, plainMsg, orig_target);
+		return;
+	}
+
+	// generally cut a message to a size of 512 byte, as everything above will never arrive complete anyway
+	if(strlen(msg) > 512) msg[512]='\0';
+
+	if(FiSH_encrypt(server, msg, target, bf_dest)==1)
+	{	// message was encrypted
+		bf_dest[512]='\0';
+		signal_continue(4, server, target, bf_dest, orig_target);
+	}
+}
+
+
+
+// format outgoing (encrypted) messages (add crypt-mark or remove plain-prefix)
+void format_msg(SERVER_REC *server, char *msg, char *target, char *orig_target)
+{
+	char contactName[CONTACT_SIZE]="", myMark[20]="", markPos[20]="", formattedMsg[800]="";
+	int i;
+	char *plainMsg;
+
+
+	if(IsNULLorEmpty(msg) || IsNULLorEmpty(target)) return;
+	if(GetBlowIniSwitch("FiSH", "process_outgoing", "1") == 0) return;
+	if(LoadKeyForContact(target, NULL)==FALSE) return;
+
+
+	plainMsg = IsPlainPrefix(msg);
+	if(plainMsg)
+	{
+		signal_continue(4, server, plainMsg, target, orig_target);
+		return;
+	}
 
 
 	// generally cut a message to a size of 512 byte, as everything above will never arrive complete anyway
 	if(strlen(msg) > 512) msg[512]='\0';
 
-	// plain-prefix in msg found?
-	GetPrivateProfileString("FiSH", "plain_prefix", "+p ", plain_prefix, sizeof(plain_prefix), iniPath);
-	if(*plain_prefix != '\0')
-	{
-		i=strlen(plain_prefix);
-		if(strncasecmp(msg, plain_prefix, i)==0)
-		{
-			irc_send_cmdv(server, "PRIVMSG %s :%s", target, msg+i);
-			return;
-		}
-	}
-
-	if(FiSH_encrypt(msg, target, bf_dest)==0)
-	{	// send plain-text (no key found)
-		irc_send_cmdv(server, "PRIVMSG %s :%s", target, msg);
-		return;
-	}
-
-	bf_dest[512]='\0';
-	irc_send_cmdv(server, "PRIVMSG %s :%s %s\n", target, "+OK", bf_dest);
-
-	strcpy(bf_dest, msg);
 
 	// append crypt-mark?
-	GetPrivateProfileString(contactName, "mark_encrypted", "1", myMark, sizeof(myMark), iniPath);
-	if(*myMark!='0' && *myMark!='n' && *myMark!='N')
+	FixIniSection(target, contactName);	// replace '[' and ']' with '~' in contact name
+	if(GetBlowIniSwitch(contactName, "mark_encrypted", "1") != 0)
 	{
 		GetPrivateProfileString("FiSH", "mark_encrypted", "", myMark, sizeof(myMark), iniPath);	// global setting
 		if(*myMark != '\0')
 		{
-			GetPrivateProfileString("FiSH", "mark_position", "0", mark_pos, sizeof(mark_pos), iniPath);
-			if(*mark_pos=='0') strcat(bf_dest, myMark);		//append mark at the end
+			strcpy(formattedMsg, msg);
+
+			GetPrivateProfileString("FiSH", "mark_position", "0", markPos, sizeof(markPos), iniPath);
+			if(*markPos=='0') strcat(formattedMsg, myMark);		//append mark at the end
 			else
 			{	// prefix mark
 				i=strlen(myMark);
-				memmove(bf_dest+i, bf_dest, strlen(bf_dest)+1);
-				strncpy(bf_dest, myMark, i);
+				memmove(formattedMsg+i, formattedMsg, strlen(formattedMsg)+1);
+				strncpy(formattedMsg, myMark, i);
 			}
+
+			signal_continue(4, server, formattedMsg, target, orig_target);
+
+			ZeroMemory(formattedMsg, sizeof(formattedMsg));
 		}
 	}
-
-	signal_continue(4, server, bf_dest, target, orig_target);
-	ZeroMemory(bf_dest, sizeof(bf_dest));
 
 	return;
 }
 
 
 
-static void notice_incoming(SERVER_REC *server, char *msg, char *nick, char *address, char *target)
-{	// decrypt NOTICE messages (and forward DH1080 key-exchange)
-	unsigned char *contactPtr;
+// decrypt NOTICE messages (and forward DH1080 key-exchange)
+void decrypt_notice(SERVER_REC *server, char *msg, char *nick, char *address, char *target)
+{
+	char *DH1024warn;
 
 	if(strncmp(msg, "DH1024_", 7)==0)
 	{
-		irc_send_cmdv(server, "NOTICE %s :Received \002old DH1024\002 public key from you! Please update to latest version: http://fish.sekure.us\n", nick);
-		printtext(server, NULL, MSGLEVEL_CRAP, "\002FiSH:\002 Received \002old DH1024\002 public key from %s! Telling him to update...", nick);
+		DH1024warn = "\002FiSH:\002 Received \002old DH1024\002 public key from you! Please update to latest version: http://fish.sekure.us";
+		signal_stop();
+		irc_send_cmdv((IRC_SERVER_REC *)server, "NOTICE %s :%s\n", nick, DH1024warn);
+		signal_emit("message irc own_notice", 3, server, DH1024warn, nick);
 		return;
 	}
 
@@ -236,53 +311,44 @@ static void notice_incoming(SERVER_REC *server, char *msg, char *nick, char *add
 		return;
 	}
 
-	if(*target=='#' || *target=='&') contactPtr=target;
-	else contactPtr=nick;
+#ifdef FiSH_DECRYPT_ZNC_LOGS
+	if(IsZNCtimestamp(msg)) msg += 11;
+#endif
 
-	if(FiSH_decrypt(msg, msg, contactPtr))
-	{
-		signal_stop();
-		signal_emit(signal_get_emitted(), 5, server, msg, nick, address, target);
-	}
+	FiSH_decrypt(server, msg, msg, ischannel(*target) ? target : nick);
 }
 
 
 
-static void decrypt_action(SERVER_REC *server, char *msg, char *nick, char *address, char *target)
+void decrypt_action(SERVER_REC *server, char *msg, char *nick, char *address, char *target)
 {
-	if(FiSH_decrypt(msg, msg, target))
-	{
-		signal_stop();
-		signal_emit(signal_get_emitted(), 5, server, msg, nick, address, target);
-	}
+	if(target==NULL) return;
+
+	FiSH_decrypt(server, msg, msg, ischannel(*target) ? target : nick);
 }
 
 
 
-static void decrypt_topic(SERVER_REC *server, char *channel, char *topic, char *nick, char *address)
+void decrypt_topic(SERVER_REC *server, char *channel, char *topic, char *nick, char *address)
 {
-	if(FiSH_decrypt(topic, topic, channel))
-	{
-		signal_stop();
-		signal_emit(signal_get_emitted(), 5, server, channel, topic, nick, address);
-	}
+	FiSH_decrypt(server, topic, topic, channel);
 }
 
 
 
-static void topic_changed(CHANNEL_REC *chan_rec)
+void decrypt_changed_topic(CHANNEL_REC *chan_rec)
 {
-	FiSH_decrypt(chan_rec->topic, chan_rec->topic, chan_rec->name);
+	FiSH_decrypt(NULL, chan_rec->topic, chan_rec->topic, chan_rec->name);
 }
 
 
 
-static void raw_handler(SERVER_REC *server, char *data)
+void raw_handler(SERVER_REC *server, char *data)
 {
-	char channel[100], *ptr, *ptr_bak;
+	char channel[CONTACT_SIZE], *ptr, *ptr_bak;
 	int len;
 
-	if(data==NULL || *data=='\0') return;
+	if(IsNULLorEmpty(data)) return;
 
 	ptr=strchr(data, ' ');	// point to command
 	if(ptr==NULL) return;
@@ -295,11 +361,15 @@ static void raw_handler(SERVER_REC *server, char *data)
 	if(ptr==NULL)
 	{
 		ptr=strchr(ptr_bak, '&');	// point to &channel
-		if(ptr_bak==NULL) return;
+		if(ptr==NULL)
+		{
+			ptr=strchr(ptr_bak, '!');	// point to !channel
+			if(ptr==NULL) return;
+		}
 	}
 
 	len=strchr(ptr, ' ')-ptr;
-	if(len >= sizeof(channel)-2) return;	// channel string too long, something went wrong
+	if(len >= CONTACT_SIZE-2) return;	// channel string too long, something went wrong
 	strncpy(channel, ptr, len);
 	channel[len]='\0';
 
@@ -307,39 +377,43 @@ static void raw_handler(SERVER_REC *server, char *data)
 	if(ptr==NULL) return;
 	ptr++;
 
-	FiSH_decrypt(ptr, ptr, channel);
+	FiSH_decrypt(server, ptr, ptr, channel);
 }
 
 
 
-static void encrypt_notice(const char *data, SERVER_REC *server, WI_ITEM_REC *item)
-{	// New command: /notice+ <nick/#channel> <notice message>
-	unsigned char bf_dest[1000]="";
+// New command: /notice+ <nick/#channel> <notice message>
+void cmd_crypt_notice(const char *data, SERVER_REC *server, WI_ITEM_REC *item)
+{
+	char bf_dest[1000]="", *msg;
 	const char *target;
-	unsigned char *msg;
 	void *free_arg=NULL;
 
 
 	if(data==NULL || (strlen(data) < 3)) goto notice_error;
-	if(!cmd_get_params(data, &free_arg, 2, &target, &msg)) goto notice_error;
+	if(!cmd_get_params(data, &free_arg, 1, &target)) goto notice_error;
 
-	if (target==NULL || *target=='\0' || msg==NULL || *msg=='\0') goto notice_error;
+	msg = strchr(data, ' ');
+	if (IsNULLorEmpty(target) || IsNULLorEmpty(msg)) goto notice_error;
+
+	msg++; // point to the notice message
+
 
 	// generally refuse a notice size of more than 512 byte, as everything above will never arrive complete anyway
 	if(strlen(msg) >= 512)
 	{
-		printtext(server, target, MSGLEVEL_CRAP, "\002FiSH:\002 /notice+ error: message argument exceeds buffer size!");
+		printtext(server, target, MSGLEVEL_CRAP, "\002FiSH:\002 /notice+ \002error\002: message argument exceeds buffer size!");
 		goto notice_error;
 	}
 
-	if(FiSH_encrypt(msg, target, bf_dest)==0)
+	if(FiSH_encrypt(server, msg, target, bf_dest)==0)
 	{
-		printtext(server, target, MSGLEVEL_CRAP, "\002FiSH:\002 /notice+ error: Encryption disabled or no key found for %s.", target);
+		printtext(server, target, MSGLEVEL_CRAP, "\002FiSH:\002 /notice+ \002error\002: Encryption disabled or no key found for %s.", target);
 		goto notice_error;
 	}
 
 	bf_dest[512]='\0';
-	irc_send_cmdv(server, "NOTICE %s :%s %s\n", target, "+OK", bf_dest);
+	irc_send_cmdv((IRC_SERVER_REC *)server, "NOTICE %s :%s\n", target, bf_dest);
 
 	signal_emit("message irc own_notice", 3, server, msg, target);
 	cmd_params_free(free_arg);
@@ -353,10 +427,49 @@ notice_error:
 
 
 
+// New command: /me+ <action message>
+void cmd_crypt_action(const char *data, SERVER_REC *server, WI_ITEM_REC *item)
+{	// New command: /me+ <action message>
+	char bf_dest[1000]="";
+	const char *target;
+
+
+	if(data==NULL || (strlen(data) < 2)) goto action_error;
+
+	if(item!=NULL) target=window_item_get_target(item);
+	else goto action_error;
+
+
+	// generally refuse an action size of more than 512 byte, as everything above will never arrive complete anyway
+	if(strlen(data) >= 512)
+	{
+		printtext(server, target, MSGLEVEL_CRAP, "\002FiSH:\002 /me+ \002error\002: message argument exceeds buffer size!");
+		return;
+	}
+
+	if(FiSH_encrypt(server, (char *)data, target, bf_dest)==0)
+	{
+		printtext(server, target, MSGLEVEL_CRAP, "\002FiSH:\002 /me+ \002error\002: Encryption disabled or no key found for %s.", target);
+		return;
+	}
+
+	bf_dest[512]='\0';
+	irc_send_cmdv((IRC_SERVER_REC *)server, "PRIVMSG %s :\001ACTION %s\001\n", target, bf_dest);
+
+	signal_emit("message irc own_action", 3, server, data, target);
+	return;
+
+action_error:
+	printtext(server, item!=NULL ? window_item_get_target(item) : NULL, MSGLEVEL_CRAP,
+			"\002FiSH:\002 Usage: /me+ <action message>");
+}
+
+
+
 // set encrypted topic for current channel, irssi syntax: /topic+ <your topic>
-static void command_crypt_TOPIC(const char *data, SERVER_REC *server, WI_ITEM_REC *item)
+void cmd_crypt_TOPIC(const char *data, SERVER_REC *server, WI_ITEM_REC *item)
 {
-	unsigned char bf_dest[1000]="";
+	char bf_dest[1000]="";
 	const char *target;
 
 
@@ -364,7 +477,8 @@ static void command_crypt_TOPIC(const char *data, SERVER_REC *server, WI_ITEM_RE
 	if(item!=NULL) target=window_item_get_target(item);
 	else goto topic_error;
 
-	if(*target!='#' && *target!='&')
+
+	if(!ischannel(*target))
 	{
 		printtext(server, target, MSGLEVEL_CRAP, "\002FiSH:\002 Please change to the channel window where you want to set the topic!");
 		goto topic_error;
@@ -378,14 +492,14 @@ static void command_crypt_TOPIC(const char *data, SERVER_REC *server, WI_ITEM_RE
 	}
 
 	// encrypt a message (using key for target)
-	if(FiSH_encrypt((char *)data, target, bf_dest)==0)
+	if(FiSH_encrypt(server, (char *)data, target, bf_dest)==0)
 	{
 		printtext(server, target, MSGLEVEL_CRAP, "\002FiSH:\002 /topic+ error: Encryption disabled or no key found for %s.", target);
 		goto topic_error;
 	}
 
 	bf_dest[512]='\0';
-	irc_send_cmdv(server, "TOPIC %s :%s %s\n", target, "+OK", bf_dest);
+	irc_send_cmdv((IRC_SERVER_REC *)server, "TOPIC %s :%s\n", target, bf_dest);
 	return;
 
 topic_error:
@@ -395,12 +509,13 @@ topic_error:
 
 
 
-static void command_helpfish(const char *arg, SERVER_REC *server, WI_ITEM_REC *item)
+void cmd_helpfish(const char *arg, SERVER_REC *server, WI_ITEM_REC *item)
 {
 	printtext(NULL, NULL, MSGLEVEL_CRAP,
 		"\n\002FiSH HELP:\002 For more information read FiSH-irssi.txt :)\n\n"
 		" /topic+ <your new topic>\n"
 		" /notice+ <nick/#channel> <notice message>\n"
+		" /me+ <your action message>\n"
 		" /key [<nick/#channel>]\n"
 		" /setkey [<nick/#channel>] <sekure_key>\n"
 		" /delkey <nick/#channel>\n"
@@ -411,39 +526,46 @@ static void command_helpfish(const char *arg, SERVER_REC *server, WI_ITEM_REC *i
 
 
 
-static void command_setinipw(const char *iniPW, SERVER_REC *server, WI_ITEM_REC *item)
+void cmd_setinipw(const char *iniPW, SERVER_REC *server, WI_ITEM_REC *item)
 {
-	unsigned int i=0, pw_len, re_enc=0;
-	unsigned char B64digest[50], SHA256digest[35];
-	unsigned char bfKey[512], new_iniKey[100], old_iniKey[100], *fptr, *ok_ptr, line_buf[1000], iniPath_new[300];
+	int i=0, pw_len, re_enc=0;
+	char B64digest[50], SHA256digest[35];
+	char bfKey[512], new_iniKey[KEYBUF_SIZE], old_iniKey[KEYBUF_SIZE], *fptr, *ok_ptr, line_buf[1000], iniPath_new[300];
 	FILE *h_ini, *h_ini_new;
 
-	pw_len=strlen(iniPW);
-	if(pw_len < 1 || pw_len > sizeof(new_iniKey))
+
+	if(!unsetiniFlag)
 	{
-		printtext(server, item!=NULL ? window_item_get_target(item) : NULL, MSGLEVEL_CRAP,
-				"\002FiSH:\002 No parameters. Usage: /setinipw <sekure_blow.ini_password>");
-		return;
+		pw_len=strlen(iniPW);
+		if(pw_len < 1 || pw_len > sizeof(new_iniKey))
+		{
+			printtext(server, item!=NULL ? window_item_get_target(item) : NULL, MSGLEVEL_CRAP,
+					"\002FiSH:\002 No parameters. Usage: /setinipw <sekure_blow.ini_password>");
+			return;
+		}
+
+		if(strfcpy(new_iniKey, (char *)iniPW, sizeof(new_iniKey))==NULL) return;
+		ZeroMemory(iniPW, pw_len);
+		pw_len=strlen(new_iniKey);
+
+		if(pw_len < 8)
+		{
+			printtext(server, item!=NULL ? window_item_get_target(item) : NULL, MSGLEVEL_CRAP,
+					"\002FiSH:\002 Password too short, at least 8 characters needed! Usage: /setinipw <sekure_blow.ini_password>");
+			return;
+		}
+
+		SHA256_memory(new_iniKey, pw_len, SHA256digest);
+		ZeroMemory(new_iniKey, sizeof(new_iniKey));
+		for(i=0;i<40872;i++) SHA256_memory(SHA256digest, 32, SHA256digest);
+		htob64(SHA256digest, B64digest, 32);
 	}
 
-	strfcpy(new_iniKey, (char *)iniPW);
-	ZeroMemory(iniPW, pw_len);
-	pw_len=strlen(new_iniKey);
-
-	if(pw_len < 8)
-	{
-		printtext(server, item!=NULL ? window_item_get_target(item) : NULL, MSGLEVEL_CRAP,
-				"\002FiSH:\002 Password too short, at least 8 characters needed! Usage: /setinipw <sekure_blow.ini_password>");
-		return;
-	}
-
-	SHA256_memory(new_iniKey, pw_len, SHA256digest);
-	ZeroMemory(new_iniKey, sizeof(new_iniKey));
-	for(i=0;i<40872;i++) SHA256_memory(SHA256digest, 32, SHA256digest);
-	htob64(SHA256digest, B64digest, 32);
 	strcpy(old_iniKey, iniKey);
-	if(unsetiniFlag) strcpy(iniKey, default_iniKey);	// unsetinipw
+
+	if(unsetiniFlag) strcpy(iniKey, default_iniKey);	// unsetinipw -> use default blow.ini key
 	else strcpy(iniKey, B64digest);	// this is used for encrypting blow.ini
+
 	for(i=0;i<30752;i++) SHA256_memory(SHA256digest, 32, SHA256digest);
 	htob64(SHA256digest, B64digest, 32);	// this is used to verify the entered password
 	ZeroMemory(SHA256digest, sizeof(SHA256digest));
@@ -519,30 +641,33 @@ static void command_setinipw(const char *iniPW, SERVER_REC *server, WI_ITEM_REC 
 
 
 // Change back to default blow.ini password, irssi syntax: /unsetinipw
-static void command_unsetinipw(const char *arg, SERVER_REC *server, WI_ITEM_REC *item)
+static void cmd_unsetinipw(const char *arg, SERVER_REC *server, WI_ITEM_REC *item)
 {
 	unsetiniFlag=1;
-	command_setinipw("Some_boogie_dummy_key", server, item);
+	cmd_setinipw("Some_boogie_dummy_key", server, item);
 	unsetiniFlag=0;
+
 	if(WritePrivateProfileString("FiSH", "ini_password_Hash", "\0", iniPath) == -1)
 	{
 		printtext(server, item!=NULL ? window_item_get_target(item) : NULL,	MSGLEVEL_CRAP,
 			"\002FiSH ERROR:\002 Unable to write to blow.ini, probably out of space or permission denied.");
 		return;
 	}
+
 	printtext(server, item!=NULL ? window_item_get_target(item) : NULL, MSGLEVEL_CRAP,
 		"\002FiSH:\002 Changed back to default blow.ini password, you won't have to enter it on start-up anymore!");
 }
 
 
 
-static void command_setkey(const char *data, SERVER_REC *server, WI_ITEM_REC *item)
+void cmd_setkey(const char *data, SERVER_REC *server, WI_ITEM_REC *item)
 {
-	unsigned char contactName[100]="", encryptedKey[150]="";
+	char contactName[CONTACT_SIZE]="", encryptedKey[150]="";
 	const char *target, *key;
 	void *free_arg;
 
-	if (data==NULL || *data=='\0')
+
+	if (IsNULLorEmpty(data))
 	{
 		printtext(server, item!=NULL ? window_item_get_target(item) : NULL, MSGLEVEL_CRAP,
 			"\002FiSH:\002 No parameters. Usage: /setkey [<nick/#channel>] <sekure_key>");
@@ -572,8 +697,7 @@ static void command_setkey(const char *data, SERVER_REC *server, WI_ITEM_REC *it
 		}
 	}
 
-	strcpy(contactName, target);
-	FixContactName(contactName);
+	FixIniSection(target, contactName);
 
 	encrypt_key((char *)key, encryptedKey);
 
@@ -596,19 +720,20 @@ static void command_setkey(const char *data, SERVER_REC *server, WI_ITEM_REC *it
 
 
 
-static void command_delkey(const char *target, SERVER_REC *server, WI_ITEM_REC *item)
+void cmd_delkey(const char *target, SERVER_REC *server, WI_ITEM_REC *item)
 {
-	unsigned char contactName[100]="";
+	char contactName[CONTACT_SIZE]="";
 
-	if (target==NULL || *target=='\0')
+
+	if (IsNULLorEmpty(target))
 	{
 		printtext(server, item!=NULL ? window_item_get_target(item) : NULL, MSGLEVEL_CRAP,
 				"\002FiSH:\002 No parameters. Usage: /delkey <nick/#channel>");
 		return;
 	}
 
-	strfcpy(contactName, (char *)target);
-	FixContactName(contactName);
+	if(strfcpy(contactName, (char *)target, CONTACT_SIZE)==NULL) return;
+	FixIniSection(NULL, contactName);
 
 	if(WritePrivateProfileString(contactName, "key", "\0", iniPath) == -1)
 	{
@@ -623,11 +748,12 @@ static void command_delkey(const char *target, SERVER_REC *server, WI_ITEM_REC *
 
 
 
-static void command_key(const char *target, SERVER_REC *server, WI_ITEM_REC *item)
+void cmd_key(const char *target, SERVER_REC *server, WI_ITEM_REC *item)
 {
-	unsigned char contactName[100]="", theKey[150]="";
+	char contactName[CONTACT_SIZE]="", theKey[KEYBUF_SIZE]="";
 
-	if(target==NULL || *target=='\0')
+
+	if(IsNULLorEmpty(target))
 	{
 		if (item!=NULL) target=window_item_get_target(item);
 		else
@@ -637,38 +763,26 @@ static void command_key(const char *target, SERVER_REC *server, WI_ITEM_REC *ite
 		}
 	}
 
-	strfcpy(contactName, (char *)target);
-	FixContactName(contactName);
+	if(strfcpy(contactName, (char *)target, CONTACT_SIZE)==NULL) return;
 
-	GetPrivateProfileString(contactName, "key", "", theKey, sizeof(theKey), iniPath);
-	if(*theKey=='\0' || strlen(theKey)<4)
-	{	// don't process, key not found in ini
+	if(LoadKeyForContact(contactName, theKey)==FALSE)
+	{
+		ZeroMemory(theKey, KEYBUF_SIZE);
 		printtext(server, item!=NULL ? window_item_get_target(item) : NULL, MSGLEVEL_CRAP,
-			"\002FiSH:\002 Key for %s not found!", target);
+			"\002FiSH:\002 Key for %s not found or invalid!", target);
 		return;
-	}
-
-	if(strncmp(theKey, "+OK ", 4)==0)
-	{       // key is encrypted, lets decrypt
-		decrypt_string((char *)iniKey, theKey+4, theKey, strlen(theKey+4));
-		if(*theKey=='\0')
-		{	// don't process, decrypted key is bad
-			ZeroMemory(theKey, sizeof(theKey));
-			printtext(server, target, MSGLEVEL_CRAP, "\002FiSH:\002 Key for %s invalid!", target);
-			return;
-		}
 	}
 
 	printtext(server, target, MSGLEVEL_CRAP, "\002FiSH:\002 Key for %s: %s", target, theKey);
 
-	ZeroMemory(theKey, sizeof(theKey));
+	ZeroMemory(theKey, KEYBUF_SIZE);
 }
 
 
 
-static void command_keyx(const char *target, SERVER_REC *server, WI_ITEM_REC *item)
+void cmd_keyx(const char *target, SERVER_REC *server, WI_ITEM_REC *item)
 {
-	if(target==NULL || *target=='\0')
+	if(IsNULLorEmpty(target))
 	{
 		if(item!=NULL) target = window_item_get_target(item);
 		else
@@ -678,7 +792,7 @@ static void command_keyx(const char *target, SERVER_REC *server, WI_ITEM_REC *it
 		}
 	}
 
-	if(*target=='#' || *target=='&')
+	if(ischannel(*target))
 	{
 		printtext(server, target, MSGLEVEL_CRAP, "\002FiSH:\002 KeyXchange does not work for channels!");
 		return;
@@ -686,7 +800,7 @@ static void command_keyx(const char *target, SERVER_REC *server, WI_ITEM_REC *it
 
 	DH1080_gen(g_myPrivKey, g_myPubKey);
 
-	irc_send_cmdv(server, "NOTICE %s :%s %s", target, "DH1080_INIT", g_myPubKey);
+	irc_send_cmdv((IRC_SERVER_REC *)server, "NOTICE %s :%s %s", target, "DH1080_INIT", g_myPubKey);
 
 	printtext(server, item!=NULL ? window_item_get_target(item) : NULL, MSGLEVEL_CRAP,
 			"\002FiSH:\002 Sent my DH1080 public key to %s, waiting for reply ...", target);
@@ -694,12 +808,13 @@ static void command_keyx(const char *target, SERVER_REC *server, WI_ITEM_REC *it
 
 
 
-static void DH1080_received(SERVER_REC *server, char *msg, char *nick, char *address, char *target)
+void DH1080_received(SERVER_REC *server, char *msg, char *nick, char *address, char *target)
 {
-	unsigned int i;
-	char hisPubKey[300], contactName[100]="", encryptedKey[150]="";
+	int i;
+	char hisPubKey[300], contactName[CONTACT_SIZE]="", encryptedKey[KEYBUF_SIZE]="";
 
-	if(*target=='&' || *target=='#' || *nick=='#' || *nick=='&') return;	// no KeyXchange for channels...
+
+	if(ischannel(*target) || ischannel(*nick)) return;	// no KeyXchange for channels...
 	i=strlen(msg);
 	if(i<191 || i>195) return;
 
@@ -718,7 +833,7 @@ static void DH1080_received(SERVER_REC *server, char *msg, char *nick, char *add
 		printtext(server, nick, MSGLEVEL_CRAP, "\002FiSH:\002 Received DH1080 public key from %s, sending mine...", nick);
 
 		DH1080_gen(g_myPrivKey, g_myPubKey);
-		irc_send_cmdv(server, "NOTICE %s :%s %s", nick, "DH1080_FINISH", g_myPubKey);
+		irc_send_cmdv((IRC_SERVER_REC *)server, "NOTICE %s :%s %s", nick, "DH1080_FINISH", g_myPubKey);
 	}
 	else if(strncmp(msg, "DH1080_FINISH ", 14)==0) strcpy(hisPubKey, msg+14);
 	else return;
@@ -726,119 +841,75 @@ static void DH1080_received(SERVER_REC *server, char *msg, char *nick, char *add
 	if(DH1080_comp(g_myPrivKey, hisPubKey)==0) return;
 	signal_stop();
 
-	strcpy(contactName, nick);
-	FixContactName(contactName);
+	FixIniSection(nick, contactName);
 
 	encrypt_key(hisPubKey, encryptedKey);
 	ZeroMemory(hisPubKey, sizeof(hisPubKey));
 
 	if(WritePrivateProfileString(contactName, "key", encryptedKey, iniPath) == -1)
 	{
-		ZeroMemory(encryptedKey, sizeof(encryptedKey));
+		ZeroMemory(encryptedKey, KEYBUF_SIZE);
 		printtext(server, nick,	MSGLEVEL_CRAP, "\002FiSH ERROR:\002 Unable to write to blow.ini, probably out of space or permission denied.");
 		return;
 	}
 
-	ZeroMemory(encryptedKey, sizeof(encryptedKey));
+	ZeroMemory(encryptedKey, KEYBUF_SIZE);
 
 	printtext(server, nick, MSGLEVEL_CRAP, "\002FiSH:\002 Key for %s successfully set!", nick);
 }
 
 
 
-static void do_auto_keyx(QUERY_REC *query, int automatic)
-{	// perform auto-keyXchange only for known people
-	unsigned char theKey[150]="", ini_auto_keyx[10], contactName[100]="";
+// perform auto-keyXchange only for known people
+void do_auto_keyx(QUERY_REC *query, int automatic)
+{
+	if(keyx_query_created)
+		return;	// query was created by FiSH
 
-	if(keyx_query_created) return;	// query was created by FiSH
+	if(GetBlowIniSwitch("FiSH", "auto_keyxchange", "1") == 0)
+		return;
 
-	GetPrivateProfileString("FiSH", "auto_keyxchange", "1", ini_auto_keyx, sizeof(ini_auto_keyx), iniPath);
-	if(*ini_auto_keyx=='0' || *ini_auto_keyx=='N' || *ini_auto_keyx=='n') return;
-
-	strcpy(contactName, query->name);
-	FixContactName(contactName);
-
-	GetPrivateProfileString(contactName, "key", "", theKey, sizeof(theKey), iniPath);
-	if(strlen(theKey) > 4)
-	{
-		ZeroMemory(theKey, sizeof(theKey));
-		command_keyx(query->name, query->server, NULL);
-	}
+	if(LoadKeyForContact(query->name, NULL))
+		cmd_keyx(query->name, query->server, NULL);
 }
 
 
 
-static void query_nick_changed(QUERY_REC *query, char *orignick)
-{	// copy key for old nick to use with the new one
-	unsigned char theKey[150]="", ini_nicktracker[10], contactName[100]="";
+// copy key for old nick to use with the new one
+void query_nick_changed(QUERY_REC *query, char *orignick)
+{
+	char theKey[KEYBUF_SIZE]="", contactName[CONTACT_SIZE]="";
 
-	GetPrivateProfileString("FiSH", "nicktracker", "1", ini_nicktracker, sizeof(ini_nicktracker), iniPath);
-	if(*ini_nicktracker=='0' || *ini_nicktracker=='N' || *ini_nicktracker=='n') return;
+
+	if(GetBlowIniSwitch("FiSH", "nicktracker", "1") == 0) return;
 
 	if(orignick==NULL || strcasecmp(orignick, query->name)==0) return;	// same nick, different case?
-	strcpy(contactName, orignick);
-	FixContactName(contactName);
 
-	GetPrivateProfileString(contactName, "key", "", theKey, sizeof(theKey), iniPath);
-	if(strlen(theKey) < 4) return;	// see if there is a key for the old nick
+	if(LoadKeyForContact(orignick, theKey)==FALSE)
+		return;	// see if there is a key for the old nick
 
-	strcpy(contactName, query->name);
-	FixContactName(contactName);
+	FixIniSection(query->name, contactName);
 
 	if(WritePrivateProfileString(contactName, "key", theKey, iniPath) == -1)
-	{
-		ZeroMemory(theKey, sizeof(theKey));
 		printtext(NULL, NULL, MSGLEVEL_CRAP, "\002FiSH ERROR:\002 Unable to write to blow.ini, probably out of space or permission denied.");
-		return;
-	}
 
-	ZeroMemory(theKey, sizeof(theKey));
-}
-
-
-
-static void void_send(SERVER_REC *server, const char *target, const char *msg, int target_type)
-{
-}
-
-static void server_register_fish(SERVER_REC *server)
-{
-	MODULE_SERVER_REC *rec;
-
-	if(server==NULL) return;
-
-	rec = g_new0(MODULE_SERVER_REC, 1);
-	MODULE_DATA_SET(server, rec);
-	rec->orig_send_message = server->send_message;
-	server->send_message = void_send;
-}
-
-static void server_unregister_fish(SERVER_REC *server)
-{
-	MODULE_SERVER_REC *rec;
-
-	if(server==NULL) return;
-
-	rec = MODULE_DATA(server);
-	if(rec==NULL) return;
-	server->send_message = rec->orig_send_message;
-	MODULE_DATA_UNSET(server);
-	g_free(rec);
+	ZeroMemory(theKey, KEYBUF_SIZE);
 }
 
 
 
 void fish_init(void)
 {
-	unsigned char iniPasswordHash[50], SHA256digest[35], B64digest[50], *iniPass_ptr;
-	unsigned int i;
+	char iniPasswordHash[50], SHA256digest[35], B64digest[50], *iniPass_ptr;
+	int i;
 
-	g_slist_foreach(servers, (GFunc) server_register_fish, NULL);
 
 	strcpy(iniPath, get_irssi_config());	// path to irssi config file
 	strcpy(tempPath, iniPath);
 	strcpy(strrchr(iniPath, '/'), blow_ini);
 	strcpy(strrchr(tempPath, '/'), "/temp_FiSH.$$$");
+
+	if(DH1080_Init()==FALSE) return;
 
 	GetPrivateProfileString("FiSH", "ini_Password_hash", "0", iniPasswordHash, sizeof(iniPasswordHash), iniPath);
 	if(strlen(iniPasswordHash) == 43)
@@ -869,39 +940,39 @@ void fish_init(void)
 	}
 
 
-	signal_add_first("message private", (SIGNAL_FUNC) decrypt_incoming);
-	signal_add_first("message public", (SIGNAL_FUNC) decrypt_incoming);
-	signal_add_first("message irc notice", (SIGNAL_FUNC) notice_incoming);
+	signal_add_first("server sendmsg", (SIGNAL_FUNC) encrypt_msg);
+	signal_add_first("message private", (SIGNAL_FUNC) decrypt_msg);
+	signal_add_first("message public", (SIGNAL_FUNC) decrypt_msg);
+	signal_add_first("message irc notice", (SIGNAL_FUNC) decrypt_notice);
 	signal_add_first("message irc action", (SIGNAL_FUNC) decrypt_action);
 
-	signal_add_first("message own_private", (SIGNAL_FUNC) encrypt_outgoing);
-	signal_add_first("message own_public", (SIGNAL_FUNC) encrypt_outgoing);
+	signal_add_first("message own_private", (SIGNAL_FUNC) format_msg);
+	signal_add_first("message own_public", (SIGNAL_FUNC) format_msg);
 
-	signal_add_first("channel topic changed", (SIGNAL_FUNC) topic_changed);
+	signal_add_first("channel topic changed", (SIGNAL_FUNC) decrypt_changed_topic);
 	signal_add_first("message topic", (SIGNAL_FUNC) decrypt_topic);
 	signal_add_first("server incoming", (SIGNAL_FUNC) raw_handler);
-
-	signal_add("server connected", (SIGNAL_FUNC) server_register_fish);
-	signal_add("server disconnected", (SIGNAL_FUNC) server_unregister_fish);
 
 	signal_add("query created", (SIGNAL_FUNC) do_auto_keyx);
 	signal_add("query nick changed", (SIGNAL_FUNC) query_nick_changed);
 
-	command_bind("topic+", NULL, (SIGNAL_FUNC) command_crypt_TOPIC);
-	command_bind("notice+", NULL, (SIGNAL_FUNC) encrypt_notice);
-	command_bind("notfish", NULL, (SIGNAL_FUNC) encrypt_notice);
-	command_bind("setkey", NULL, (SIGNAL_FUNC) command_setkey);
-	command_bind("delkey", NULL, (SIGNAL_FUNC) command_delkey);
-	command_bind("key", NULL, (SIGNAL_FUNC) command_key);
-	command_bind("keyx", NULL, (SIGNAL_FUNC) command_keyx);
-	command_bind("setinipw", NULL, (SIGNAL_FUNC) command_setinipw);
-	command_bind("unsetinipw", NULL, (SIGNAL_FUNC) command_unsetinipw);
+	command_bind("topic+", NULL, (SIGNAL_FUNC) cmd_crypt_TOPIC);
+	command_bind("notice+", NULL, (SIGNAL_FUNC) cmd_crypt_notice);
+	command_bind("notfish", NULL, (SIGNAL_FUNC) cmd_crypt_notice);
+	command_bind("me+", NULL, (SIGNAL_FUNC) cmd_crypt_action);
+	command_bind("setkey", NULL, (SIGNAL_FUNC) cmd_setkey);
+	command_bind("delkey", NULL, (SIGNAL_FUNC) cmd_delkey);
+	command_bind("key", NULL, (SIGNAL_FUNC) cmd_key);
+	command_bind("showkey", NULL, (SIGNAL_FUNC) cmd_key);
+	command_bind("keyx", NULL, (SIGNAL_FUNC) cmd_keyx);
+	command_bind("setinipw", NULL, (SIGNAL_FUNC) cmd_setinipw);
+	command_bind("unsetinipw", NULL, (SIGNAL_FUNC) cmd_unsetinipw);
 
-	command_bind("fishhelp", NULL, (SIGNAL_FUNC) command_helpfish);
-	command_bind("helpfish", NULL, (SIGNAL_FUNC) command_helpfish);
+	command_bind("fishhelp", NULL, (SIGNAL_FUNC) cmd_helpfish);
+	command_bind("helpfish", NULL, (SIGNAL_FUNC) cmd_helpfish);
 
 	printtext(NULL, NULL, MSGLEVEL_CLIENTNOTICE,
-		"FiSH v0.99 - encryption module for irssi loaded! URL: http://fish.sekure.us\n"
+		"FiSH v1.00 - encryption module for irssi loaded! URL: http://fish.sekure.us\n"
 		"Try /helpfish or /fishhelp for a short command overview");
 
 	module_register("fish", "core");
@@ -911,52 +982,53 @@ void fish_init(void)
 
 void fish_deinit(void)
 {
-	g_slist_foreach(servers, (GFunc) server_unregister_fish, NULL);
-
-	signal_remove("message private", (SIGNAL_FUNC) decrypt_incoming);
-	signal_remove("message public", (SIGNAL_FUNC) decrypt_incoming);
-	signal_remove("message irc notice", (SIGNAL_FUNC) notice_incoming);
+	signal_remove("server sendmsg", (SIGNAL_FUNC) encrypt_msg);
+	signal_remove("message private", (SIGNAL_FUNC) decrypt_msg);
+	signal_remove("message public", (SIGNAL_FUNC) decrypt_msg);
+	signal_remove("message irc notice", (SIGNAL_FUNC) decrypt_notice);
 	signal_remove("message irc action", (SIGNAL_FUNC) decrypt_action);
 
-	signal_remove("message own_private", (SIGNAL_FUNC) encrypt_outgoing);
-	signal_remove("message own_public", (SIGNAL_FUNC) encrypt_outgoing);
+	signal_remove("message own_private", (SIGNAL_FUNC) format_msg);
+	signal_remove("message own_public", (SIGNAL_FUNC) format_msg);
 
-	signal_remove("channel topic changed", (SIGNAL_FUNC) topic_changed);
+	signal_remove("channel topic changed", (SIGNAL_FUNC) decrypt_changed_topic);
 	signal_remove("message topic", (SIGNAL_FUNC) decrypt_topic);
 	signal_remove("server incoming", (SIGNAL_FUNC) raw_handler);
-
-	signal_remove("server connected", (SIGNAL_FUNC) server_register_fish);
-	signal_remove("server disconnected", (SIGNAL_FUNC) server_unregister_fish);
 
 	signal_remove("query created", (SIGNAL_FUNC) do_auto_keyx);
 	signal_remove("query nick changed", (SIGNAL_FUNC) query_nick_changed);
 
-	command_unbind("topic+", (SIGNAL_FUNC) command_crypt_TOPIC);
-	command_unbind("notice+", (SIGNAL_FUNC) encrypt_notice);
-	command_unbind("notfish", (SIGNAL_FUNC) encrypt_notice);
-	command_unbind("setkey", (SIGNAL_FUNC) command_setkey);
-	command_unbind("delkey", (SIGNAL_FUNC) command_delkey);
-	command_unbind("key", (SIGNAL_FUNC) command_key);
-	command_unbind("keyx", (SIGNAL_FUNC) command_keyx);
-	command_unbind("setinipw", (SIGNAL_FUNC) command_setinipw);
-	command_unbind("unsetinipw", (SIGNAL_FUNC) command_unsetinipw);
+	command_unbind("topic+", (SIGNAL_FUNC) cmd_crypt_TOPIC);
+	command_unbind("notice+", (SIGNAL_FUNC) cmd_crypt_notice);
+	command_unbind("notfish", (SIGNAL_FUNC) cmd_crypt_notice);
+	command_unbind("me+", (SIGNAL_FUNC) cmd_crypt_action);
+	command_unbind("setkey", (SIGNAL_FUNC) cmd_setkey);
+	command_unbind("delkey", (SIGNAL_FUNC) cmd_delkey);
+	command_unbind("key", (SIGNAL_FUNC) cmd_key);
+	command_unbind("showkey", (SIGNAL_FUNC) cmd_key);
+	command_unbind("keyx", (SIGNAL_FUNC) cmd_keyx);
+	command_unbind("setinipw", (SIGNAL_FUNC) cmd_setinipw);
+	command_unbind("unsetinipw", (SIGNAL_FUNC) cmd_unsetinipw);
 
-	command_unbind("fishhelp", (SIGNAL_FUNC) command_helpfish);
-	command_unbind("helpfish", (SIGNAL_FUNC) command_helpfish);
+	command_unbind("fishhelp", (SIGNAL_FUNC) cmd_helpfish);
+	command_unbind("helpfish", (SIGNAL_FUNC) cmd_helpfish);
+
+	DH1080_DeInit();
 }
 
 
 
 // :someone!ident@host.net PRIVMSG leetguy :Some Text -> Result: Rnick="someone"
-int ExtractRnick(char *Rnick, char *incoming_msg)		// needs direct pointer to "nick@host" or ":nick@host"
+int ExtractRnick(char *Rnick, char *msg)		// needs direct pointer to "nick@host" or ":nick@host"
 {
 	int k=0;
 
-	if(*incoming_msg == ':') incoming_msg++;
+	if(*msg==':' || *msg==' ') msg++;
 
-	while(*incoming_msg!='!' && *incoming_msg!='\0') {
-		Rnick[k]=*incoming_msg;
-		incoming_msg++;
+	while(*msg!='!' && *msg!='\0' && *msg!=' ' && k < CONTACT_SIZE)
+	{
+		Rnick[k]=*msg;
+		msg++;
 		k++;
 	}
 	Rnick[k]='\0';
@@ -966,32 +1038,68 @@ int ExtractRnick(char *Rnick, char *incoming_msg)		// needs direct pointer to "n
 }
 
 
-// replace '[' and ']' from nick/channel with '~' (else problems with .ini files)
-void FixContactName(char *contactName)
+// replace '[' and ']' from nick/channel with '~' (otherwise problems with .ini files)
+void FixIniSection(const char *section, char *fixedSection)
 {
-	while(*contactName != '\0')
+	if(section!=NULL)
 	{
-		if((*contactName == '[') || (*contactName == ']')) *contactName='~';
-		contactName++;
+		strncpy(fixedSection, section, CONTACT_SIZE);
+		fixedSection[CONTACT_SIZE-1] = '\0';
+	}
+
+	while(*fixedSection != '\0')
+	{
+		if((*fixedSection == '[') || (*fixedSection == ']')) *fixedSection='~';
+		fixedSection++;
 	}
 }
 
 
-void memXOR(unsigned char *s1, const unsigned char *s2, int n)
+void memXOR(char *s1, const char *s2, int n)
 {
 	while(n--) *s1++ ^= *s2++;
 }
 
 
-char *strfcpy(unsigned char *dest, char *buffer)		// removes leading and trailing blanks from string
+// removes leading and trailing blanks from string
+char *strfcpy(char *dest, char *buffer, int destSize)
 {
 	int i=0, k=strlen(buffer);
+
+	if(k < 2) return NULL;
 
 	while(buffer[i]==' ') i++;
 	while(buffer[k-1]==' ') k--;
 
 	buffer[k]=0;
 
-	strcpy(dest, buffer+i);
+	strncpy(dest, buffer+i, destSize);
+	dest[destSize-1] = '\0';
 	return dest;
+}
+
+
+int GetBlowIniSwitch(const char *section, const char *key, const char *default_value)
+{
+	char ini_value[10];
+
+	GetPrivateProfileString(section, key, default_value, ini_value, sizeof(ini_value), iniPath);
+	if(isNoChar(*ini_value)) return 0;
+	else return 1;
+}
+
+
+char *IsPlainPrefix(const char *msg)
+{
+	char plainPrefix[20]="";
+	int i;
+
+	GetPrivateProfileString("FiSH", "plain_prefix", "+p ", plainPrefix, sizeof(plainPrefix), iniPath);
+	if(*plainPrefix != '\0')
+	{
+		i=strlen(plainPrefix);
+		if(strncasecmp(msg, plainPrefix, i)==0) return (char *)msg+i;
+	}
+
+	return NULL;
 }

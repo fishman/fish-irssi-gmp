@@ -1,9 +1,10 @@
 #include <string.h>
+
 /*
     Public Base64 conversion tables
 */
-unsigned char B64ABC[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-unsigned char b64buf[256];
+const char B64ABC[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+char b64buf[256];
 
 
 /*
@@ -23,7 +24,7 @@ void initb64(){
    Converts base64 string b to hexnumber d.
    Returns size of hexnumber in bytes.
 */
-int b64toh(char *b, char *d){
+int b64toh(const char *b, char *d){
     unsigned int i,k,l;
 
     l=strlen(b);
@@ -64,7 +65,7 @@ int b64toh(char *b, char *d){
    Converts hexnumber h (with length l bytes) to base64 string d.
    Returns length of base64 string.
 */
-int htob64(char *h, char *d, unsigned int l){
+int htob64(const char *h, char *d, unsigned int l){
     unsigned int i,j,k;
     unsigned char m,t;
 

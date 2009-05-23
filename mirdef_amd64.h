@@ -16,12 +16,13 @@
 #define MR_LBITS 64			/* bits in long */
 #define mr_unsign32 unsigned int
 #define mr_unsign64 unsigned long
-#define MR_FLASH 52
-#define MR_ALWAYS_BINARY
+// #define MR_FLASH 52
 #define MAXBASE ((mr_small)1<<(MIRACL-1))
 #define BITSINCHAR 8
 
 // #define MR_NOASM	// enable this if you have troubles with the inline-ASM parts
+
+//#define MR_STRIPPED_DOWN
 
 
 /* use assembly language file mrmuldv.s64
