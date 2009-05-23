@@ -1,0 +1,123 @@
+# bash makefile for MIRACL (http://indigo.ie/~mscott/)
+# for use on MacOSX systems (tested with MIRACL v4.8.5 and MacOSX v10.3.7,
+# Darwin Kernel v7.7.0)
+#
+# Usual steps to compile MIRACL:
+#
+# mkdir MIRACL;cd MIRACL
+# wget http://indigo.ie/~mscott/miracl.zip
+# or: curl -O http://indigo.ie/~mscott/miracl.zip
+# unzip -j -aa -L miracl.zip
+# cp /path/to/mirdef_macosx.h mirdef.h
+# cp /path/to/mir_macosx macosx
+# bash macosx
+#
+# test with: ./pk-demo or ./bmark
+
+
+# this is the used mirdef.h (mirdef_macosx.h)
+#
+# #define MR_BIG_ENDIAN
+# #define MIRACL 32
+# #define mr_utype int
+# #define MR_IBITS 32
+# #define MR_LBITS 32
+# #define mr_unsign32 unsigned int
+# #define mr_dltype long long
+# #define mr_unsign64 unsigned long long
+# #define MR_FLASH 52
+# //#define MR_STRIPPED_DOWN
+# #define MAXBASE ((mr_small)1<<(MIRACL-1))
+# #define MR_BITSINCHAR 8
+
+
+if [ ! -f "../mirdef_macosx.h" ]; then
+	if [ ! -f "mirdef_macosx.h" ]; then
+		echo "mirdef_macosx.h not found! Make sure you are using the correct mirdef.h"
+		echo
+		echo "Press ENTER to continue or CTRL+C to abort..."; read junk
+	else
+		cp mirdef_macosx.h mirdef.h
+	fi
+else
+	cp ../mirdef_macosx.h mirdef.h
+fi
+
+
+rm -f *.exe
+rm -f *.lib
+rm -f miracl.a
+gcc -I. -c -O2 mrcore.c
+gcc -I. -c -O2 mrarth0.c
+gcc -I. -c -O2 mrarth1.c
+gcc -I. -c -O2 mrarth2.c
+gcc -I. -c -O2 mralloc.c
+gcc -I. -c -O2 mrsmall.c
+gcc -I. -c -O2 mrio1.c
+gcc -I. -c -O2 mrio2.c
+gcc -I. -c -O2 mrgcd.c
+gcc -I. -c -O2 mrjack.c
+gcc -I. -c -O2 mrxgcd.c
+gcc -I. -c -O2 mrarth3.c
+gcc -I. -c -O2 mrrand.c
+gcc -I. -c -O2 mrprime.c
+gcc -I. -c -O2 mrcrt.c
+gcc -I. -c -O2 mrscrt.c
+gcc -I. -c -O2 mrmonty.c
+gcc -I. -c -O2 mrpower.c
+gcc -I. -c -O2 mrcurve.c
+gcc -I. -c -O2 mrfast.c
+gcc -I. -c -O2 mrshs.c
+gcc -I. -c -O2 mrshs256.c
+gcc -I. -c -O2 -w mrshs512.c
+gcc -I. -c -O2 mraes.c
+gcc -I. -c -O2 mrlucas.c
+gcc -I. -c -O2 mrstrong.c
+gcc -I. -c -O2 mrbrick.c
+gcc -I. -c -O2 mrebrick.c
+gcc -I. -c -O2 mrecgf2m.c
+gcc -I. -c -O2 mrflash.c
+gcc -I. -c -O2 mrfrnd.c
+gcc -I. -c -O2 mrdouble.c
+gcc -I. -c -O2 mrround.c
+gcc -I. -c -O2 mrbuild.c
+gcc -I. -c -O2 mrflsh1.c
+gcc -I. -c -O2 mrpi.c
+gcc -I. -c -O2 mrflsh2.c
+gcc -I. -c -O2 mrflsh3.c
+gcc -I. -c -O2 mrflsh4.c
+
+cp mrmuldv.ccc mrmuldv.c
+gcc -I. -c -O2 mrmuldv.c
+#as mrmuldv.s -o mrmuldv.o
+
+ar rc miracl.a mrcore.o mrarth0.o mrarth1.o mrarth2.o mralloc.o mrsmall.o
+ar r miracl.a mrio1.o mrio2.o mrjack.o mrgcd.o mrxgcd.o mrarth3.o
+ar r miracl.a mrrand.o mrprime.o mrcrt.o mrscrt.o mrmonty.o mrcurve.o
+ar r miracl.a mrpower.o mrfast.o mrshs.o mrshs256.o mraes.o mrlucas.o mrstrong.o       
+ar r miracl.a mrflash.o mrfrnd.o mrdouble.o mrround.o mrbuild.o
+ar r miracl.a mrflsh1.o mrpi.o mrflsh2.o mrflsh3.o mrflsh4.o 
+ar r miracl.a mrbrick.o mrebrick.o mrecgf2m.o mrmuldv.o mrshs512.o
+rm mr*.o
+
+ranlib miracl.a
+
+gcc -I. bmark.c miracl.a -o bmark
+gcc -I. fact.c miracl.a -o fact
+g++  -I. -c -O2 big.cpp
+g++  -I. -c -O2 crt.cpp
+g++  -I. -c -O2 zzn.cpp
+g++  -I. -c -O2 ecn.cpp
+g++  -I. -c -O2 ec2.cpp
+g++  -I. mersenne.cpp big.o miracl.a -o mersenne
+g++  -I. brent.cpp big.o zzn.o miracl.a -o brent
+g++  -I. -c -O2 flash.cpp
+g++  -I. sample.cpp flash.o miracl.a -o sample
+g++  -I. ecsgen.cpp ecn.o big.o miracl.a -o ecsgen
+g++  -I. ecsign.cpp ecn.o big.o miracl.a -o ecsign
+g++  -I. ecsver.cpp ecn.o big.o miracl.a -o ecsver
+g++  -I. pk-demo.cpp ecn.o crt.o big.o miracl.a -o pk-demo
+g++  -I. -c -O2 polymod.cpp
+g++  -I. -c -O2 poly.cpp
+g++  -I. schoof.cpp polymod.o poly.o ecn.o crt.o zzn.o big.o miracl.a -o schoof
+

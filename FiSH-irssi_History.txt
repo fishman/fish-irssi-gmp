@@ -1,0 +1,119 @@
+FiSH for irssi [History]
+************************
+
+
+28.06.2005:	v0.99
+		- fixed a problem with blow.ini, where setting a key
+		  didn't work in many cases, because a temp-file was
+		  created in current directory ... (reported by many
+		  people and in the forum)
+
+
+14.01.2005:	v0.98
+		- using '/dev/urandom' in DH1080.c now, this solves
+		  crash/freeze problems with DH1080 key-exchange
+		  (reported by rho; thanx for the help, flier)
+
+		- Local channels (using '&' instead of '#') are now
+		  supported
+
+		- Get/WritePrivateProfileString completely rewritten,
+		  fixing an evil crash on some systems and problems
+		  with screwed up blow.ini if you run out of disc space
+		  (reported by daxxar and k9)
+
+		- added crypt-mark for own (outgoing) messages (thanx qvr)
+
+		- minor changes in blowfish.c
+
+		- fixed crash with too large keys, all keys bigger than
+		  80 characters are now truncated (reported by ruant)
+
+		- if you receive a DH1080 key-exchange, a query window
+		  is created now (in case there's none yet)
+
+		- AMD64 compatible now! (thanx kvatn and Ptah for helping)
+
+		- fixed a segmentation fault on BSD machines, happened
+		  after trying to reload FiSH while being connected to a
+		  server
+
+		- improved makefile: just run 'make'
+
+
+20.07.2004:	v0.97a
+		- fixed a segmentation fault if topic was set to NULL :(
+
+
+		v0.97
+		- added /helpfish and /fishhelp :)
+
+		- topic encryption is now supported... but keep in
+		  mind: topic size SHRINKS drastically to about 60%!
+		  This is already insufficient for a common eBay URL
+		  syntax: /topic+ <your topic>
+
+		- new feature: 'NickTracker' will allow seamless
+		  conversations in the case your chat partner suddenly
+		  changes his nick. If enabled this feature will simply
+		  copy the old key to use with his new nick.
+
+		- block-align base64 strings if truncated by IRC
+		  server: no more broken blocks at the end of long
+		  messages!
+
+		- also added a feature called "mark broken block"
+		  which will indicate whether a broken block was cut,
+		  meaning the message arrived incomplete from server
+
+		- now decrypting "Mircryption" messages, those start
+		  with 'mcps' instead of '+OK'
+
+		- new command: /unsetinipw
+		  Change back to default blow.ini password
+
+
+20.04.2004:	v0.96
+		- new Diffie-Hellman key-exchange implementation:
+		  DH1080 - using a 1080bit prime
+
+
+25.02.2004:	v0.95a
+		- fixed evil /setkey bug!
+
+
+29.01.2004:	v0.95
+		- Auto-KeyXchange for known people (who had already a
+		  key set) added! It is triggered on an incoming query,
+		  on nick-change in a running query and also if you
+		  start a new query with someone
+
+		- decrypting psyBNC logs now
+
+		- added a check to prevent DH1024 key-exchange from
+		  crashing in rare cases
+
+		- decrypting NOTICE messages
+
+		- encrypt NOTICE messages using:
+		  /notfish <nick/#channel> <notice message>
+
+
+03.10.2003:	v0.94
+		- new feature: /setinipw (explained in FiSH-irssi.txt)
+
+		- if you want to change the crypt-mark position, add
+		  mark_position=0/1 to blow.ini (see blow.ini-EXAMPLE)
+
+
+29.09.2003:	v0.9
+		first release
+
+
+
+
+
+
+
+
+

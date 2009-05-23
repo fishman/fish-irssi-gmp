@@ -1,0 +1,105 @@
+# bash makefile for MIRACL (http://indigo.ie/~mscott/)
+# for use on AMD64 systems (tested with MIRACL v4.8.5 and  v10.3.7,
+#
+# Usual steps to compile MIRACL:
+#
+# mkdir MIRACL;cd MIRACL
+# wget http://indigo.ie/~mscott/miracl.zip
+# or: curl -O http://indigo.ie/~mscott/miracl.zip
+# unzip -j -aa -L miracl.zip
+# cp /path/to/mirdef_amd64.h mirdef.h
+# cp /path/to/mir_amd64 amd64
+# bash amd64
+#
+# test with: ./pk-demo or ./bmark
+
+
+if [ ! -f "../mirdef_amd64.h" ]; then
+	if [ ! -f "mirdef_amd64.h" ]; then
+		echo "mirdef_amd64.h not found! Make sure you are using the correct mirdef.h"
+		echo
+		echo "Press ENTER to continue or CTRL+C to abort..."; read junk
+	else
+		cp mirdef_amd64.h mirdef.h
+	fi
+else
+	cp ../mirdef_amd64.h mirdef.h
+fi
+
+# Looks like you'll need '-fPIC' on AMD64 
+arg1=-fPIC
+
+rm -f miracl.a
+gcc -I. -c -O2 $arg1 mrcore.c
+gcc -I. -c -O2 $arg1 mrarth0.c
+gcc -I. -c -O2 $arg1 mrarth1.c
+gcc -I. -c -O2 $arg1 mrarth2.c
+gcc -I. -c -O2 $arg1 mralloc.c
+gcc -I. -c -O2 $arg1 mrsmall.c
+gcc -I. -c -O2 $arg1 mrio1.c
+gcc -I. -c -O2 $arg1 mrio2.c
+gcc -I. -c -O2 $arg1 mrgcd.c
+gcc -I. -c -O2 $arg1 mrjack.c
+gcc -I. -c -O2 $arg1 mrxgcd.c
+gcc -I. -c -O2 $arg1 mrarth3.c
+gcc -I. -c -O2 $arg1 mrrand.c
+gcc -I. -c -O2 $arg1 mrprime.c
+gcc -I. -c -O2 $arg1 mrcrt.c
+gcc -I. -c -O2 $arg1 mrscrt.c
+gcc -I. -c -O2 $arg1 mrmonty.c
+gcc -I. -c -O2 $arg1 mrpower.c
+gcc -I. -c -O2 $arg1 mrcurve.c
+gcc -I. -c -O2 $arg1 mrfast.c
+gcc -I. -c -O2 $arg1 mrshs.c
+gcc -I. -c -O2 $arg1 mrshs256.c
+gcc -I. -c -O2 $arg1 -w mrshs512.c
+gcc -I. -c -O2 $arg1 mraes.c
+gcc -I. -c -O2 $arg1 mrlucas.c
+gcc -I. -c -O2 $arg1 mrstrong.c
+gcc -I. -c -O2 $arg1 mrbrick.c
+gcc -I. -c -O2 $arg1 mrebrick.c
+gcc -I. -c -O2 $arg1 mrecgf2m.c
+gcc -I. -c -O2 $arg1 mrflash.c
+gcc -I. -c -O2 $arg1 mrfrnd.c
+gcc -I. -c -O2 $arg1 mrdouble.c
+gcc -I. -c -O2 $arg1 mrround.c
+gcc -I. -c -O2 $arg1 mrbuild.c
+gcc -I. -c -O2 $arg1 mrflsh1.c
+gcc -I. -c -O2 $arg1 mrpi.c
+gcc -I. -c -O2 $arg1 mrflsh2.c
+gcc -I. -c -O2 $arg1 mrflsh3.c
+gcc -I. -c -O2 $arg1 mrflsh4.c
+
+# cp mrmuldv.ccc mrmuldv.c
+# gcc -I. -c -O2 $arg1 mrmuldv.c
+as mrmuldv.s64 -o mrmuldv.o
+
+ar rc miracl.a mrcore.o mrarth0.o mrarth1.o mrarth2.o mralloc.o mrsmall.o
+ar r miracl.a mrio1.o mrio2.o mrjack.o mrgcd.o mrxgcd.o mrarth3.o
+ar r miracl.a mrrand.o mrprime.o mrcrt.o mrscrt.o mrmonty.o mrcurve.o
+ar r miracl.a mrpower.o mrfast.o mrshs.o mrshs256.o mraes.o mrlucas.o mrstrong.o       
+ar r miracl.a mrflash.o mrfrnd.o mrdouble.o mrround.o mrbuild.o
+ar r miracl.a mrflsh1.o mrpi.o mrflsh2.o mrflsh3.o mrflsh4.o
+ar r miracl.a mrbrick.o mrebrick.o mrecgf2m.o mrshs512.o mrmuldv.o
+gcc -I. -O2 $arg1 factor.c miracl.a -lm -o factor
+rm mr*.o
+
+gcc -I. $arg1 bmark.c miracl.a -o bmark
+gcc -I. $arg1 fact.c miracl.a -o fact
+g++ -I. $arg1 -c -O2 big.cpp
+g++ -I. $arg1 -c -O2 crt.cpp
+g++ -I. $arg1 -c -O2 zzn.cpp
+g++ -I. $arg1 -c -O2 ecn.cpp
+g++ -I. $arg1 -c -O2 ec2.cpp
+g++ -I. $arg1 mersenne.cpp big.o miracl.a -o mersenne
+g++ -I. $arg1 brent.cpp big.o zzn.o miracl.a -o brent
+g++ -I. $arg1 -c -O2 flash.cpp
+g++ -I. $arg1 sample.cpp flash.o miracl.a -o sample
+g++ -I. $arg1 ecsgen.cpp ecn.o big.o miracl.a -o ecsgen
+g++ -I. $arg1 ecsign.cpp ecn.o big.o miracl.a -o ecsign
+g++ -I. $arg1 ecsver.cpp ecn.o big.o miracl.a -o ecsver
+g++ -I. $arg1 pk-demo.cpp ecn.o crt.o big.o miracl.a -o pk-demo
+g++ -I. $arg1 -c -O2 polymod.cpp
+g++ -I. $arg1 -c -O2 poly.cpp
+g++ -I. $arg1 schoof.cpp polymod.o poly.o ecn.o crt.o zzn.o big.o miracl.a -o schoof
+
